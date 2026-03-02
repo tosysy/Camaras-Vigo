@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VIGO CCTV</title>
+  <style>
+    :root {
+      --neon:        #00FF88;
+      --neon-dim:    rgba(0,255,136,0.10);
+      --neon-border: rgba(0,255,136,0.22);
+      --bg:          #0A0A0F;
+      --card:        #12121A;
+      --border:      rgba(255,255,255,0.06);
+      --text:        #D0D0E0;
+      --text-dim:    #484860;
+      --header-bg:   rgba(10,10,15,0.90);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* Subtle grid texture */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,255,136,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,136,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── SCAN OVERLAY ───────────────────────────────── */
+    #scan-overlay {
+      position: fixed; inset: 0; z-index: 600;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 18px; padding: 32px;
+      transition: opacity 0.5s;
+    }
+
+    .scan-icon { font-size: 44px; margin-bottom: 4px; }
+
+    .scan-title {
+      font-size: 1.6rem; font-weight: 800;
+      letter-spacing: 0.14em; color: var(--neon);
+      font-family: monospace;
+    }
+
+    .scan-sub {
+      color: var(--text-dim); font-size: 0.78rem;
+      font-family: monospace; letter-spacing: 0.06em;
+    }
+
+    .scan-track {
+      width: 320px; height: 3px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 3px; overflow: hidden; position: relative;
+    }
+
+    .scan-fill {
+      position: absolute; left: 0; top: 0; height: 100%;
+      width: 0%;
+      background: var(--neon);
+      border-radius: 3px;
+      box-shadow: 0 0 10px var(--neon);
+      transition: width 0.25s ease;
+    }
+
+    .scan-ping {
+      position: absolute; top: 0; height: 100%; width: 70px;
+      background: linear-gradient(90deg, transparent, rgba(0,255,136,0.55), transparent);
+      animation: ping 1.6s infinite;
+    }
+
+    @keyframes ping { 0%{left:-70px} 100%{left:100%} }
+
+    .scan-count {
+      font-family: monospace; font-size: 0.83rem; color: var(--text-dim);
+    }
+    .scan-count em { color: var(--neon); font-style: normal; font-weight: 700; }
+
+    /* ─── HEADER ─────────────────────────────────────── */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--header-bg);
+      backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+      border-bottom: 1px solid var(--border);
+      height: 58px;
+      display: flex; align-items: center;
+      padding: 0 18px; gap: 12px;
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 9px;
+      font-weight: 700; font-size: 1rem;
+      letter-spacing: 0.06em; color: #fff; white-space: nowrap;
+    }
+
+    .logo-box {
+      width: 30px; height: 30px;
+      background: var(--neon-dim); border: 1px solid var(--neon-border);
+      border-radius: 8px; display: grid; place-items: center; font-size: 15px;
+    }
+
+    .logo em { color: var(--neon); font-style: normal; }
+
+    .live-chip {
+      display: flex; align-items: center; gap: 5px;
+      font-family: monospace; font-size: 0.65rem; color: var(--neon);
+      background: var(--neon-dim); border: 1px solid var(--neon-border);
+      padding: 3px 10px; border-radius: 100px;
+    }
+
+    .dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--neon); box-shadow: 0 0 6px var(--neon);
+      animation: blink 1.3s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+
+    .spacer { flex: 1; }
+
+    .timer-pill {
+      font-family: monospace; font-size: 0.78rem; color: var(--neon);
+      background: var(--neon-dim); border: 1px solid var(--neon-border);
+      padding: 5px 14px; border-radius: 100px; white-space: nowrap;
+    }
+
+    .btn-refresh {
+      background: var(--neon); color: #000;
+      border: none; border-radius: 8px;
+      padding: 7px 16px;
+      font-weight: 700; font-size: 0.78rem; cursor: pointer;
+      display: flex; align-items: center; gap: 5px;
+      transition: opacity 0.15s; white-space: nowrap;
+    }
+    .btn-refresh:hover { opacity: 0.82; }
+
+    .btn-folder {
+      background: none; border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 8px; color: var(--text-dim);
+      width: 36px; height: 36px; cursor: pointer;
+      font-size: 17px; display: grid; place-items: center;
+      transition: color 0.2s, border-color 0.2s;
+      padding: 0;
+    }
+    .btn-folder:hover { color: var(--neon); border-color: var(--neon-border); }
+    .btn-folder.active { color: var(--neon); border-color: var(--neon-border); }
+
+    /* ─── TOAST ──────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: rgba(18,18,26,0.96); border: 1px solid var(--neon-border);
+      color: var(--neon); font-family: monospace; font-size: 0.78rem;
+      padding: 9px 20px; border-radius: 100px;
+      z-index: 900; pointer-events: none;
+      opacity: 0; transition: opacity 0.3s;
+      white-space: nowrap; max-width: 90vw; text-align: center;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ─── MAIN ───────────────────────────────────────── */
+    main { position: relative; z-index: 1; padding: 16px; }
+
+    .stats-bar {
+      display: flex; align-items: center; gap: 4px;
+      margin-bottom: 16px;
+      font-family: monospace; font-size: 0.74rem;
+      color: var(--text-dim); flex-wrap: wrap;
+    }
+    .stats-bar em { color: var(--neon); font-style: normal; font-weight: 700; }
+    .stats-bar span { margin: 0 5px; }
+
+    /* ─── GRID ───────────────────────────────────────── */
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 10px;
+    }
+
+    /* ─── CAMERA CARD ────────────────────────────────── */
+    .cam-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden; cursor: pointer;
+      transition: border-color 0.2s, transform 0.18s, box-shadow 0.2s;
+    }
+    .cam-card:hover {
+      border-color: rgba(0,255,136,0.28);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(0,255,136,0.07);
+    }
+
+    .cam-thumb {
+      position: relative; aspect-ratio: 16/9;
+      background: #000; overflow: hidden;
+    }
+    .cam-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+
+    .live-badge {
+      position: absolute; top: 8px; left: 8px;
+      display: flex; align-items: center; gap: 4px;
+      background: rgba(0,0,0,0.70); border: 1px solid var(--neon-border);
+      border-radius: 5px; padding: 3px 7px;
+      font-family: monospace; font-size: 0.6rem; color: var(--neon);
+      backdrop-filter: blur(4px);
+    }
+
+    .cam-footer {
+      padding: 9px 12px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .cam-id { font-family: monospace; font-size: 0.75rem; font-weight: 600; color: var(--text); }
+    .cam-loc { font-family: monospace; font-size: 0.65rem; color: var(--text-dim); }
+
+    /* ─── MODAL ──────────────────────────────────────── */
+    #modal {
+      display: none;
+      position: fixed; inset: 0; z-index: 400;
+      background: rgba(0,0,0,0.92);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      flex-direction: column;
+    }
+    #modal.open { display: flex; }
+
+    .modal-topbar {
+      display: flex; align-items: center;
+      padding: 10px 14px; gap: 8px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(10,10,15,0.85);
+      flex-shrink: 0;
+    }
+
+    .modal-cam-label {
+      font-family: monospace; font-size: 0.84rem;
+      color: #fff; font-weight: 600;
+    }
+    .modal-cam-label em { color: var(--neon); font-style: normal; }
+
+    .modal-spacer { flex: 1; }
+
+    .icon-btn {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 7px; color: #fff;
+      width: 34px; height: 34px; cursor: pointer;
+      font-size: 15px; display: grid; place-items: center;
+      transition: background 0.15s; padding: 0; line-height: 1;
+      font-family: monospace;
+    }
+    .icon-btn:hover:not(:disabled) { background: rgba(255,255,255,0.16); }
+    .icon-btn:disabled { opacity: 0.25; cursor: default; }
+    .icon-btn.nav-side { font-size: 22px; font-weight: 700; }
+
+    .modal-body {
+      flex: 1; display: flex; align-items: center;
+      overflow: hidden; position: relative;
+    }
+
+    .nav-arrow {
+      flex-shrink: 0; width: 56px; height: 100%;
+      background: none; border: none; cursor: pointer;
+      color: rgba(255,255,255,0.35); font-size: 44px;
+      display: flex; align-items: center; justify-content: center;
+      transition: color 0.15s, background 0.15s;
+      padding: 0;
+    }
+    .nav-arrow:hover:not(:disabled) { color: var(--neon); background: rgba(0,255,136,0.04); }
+    .nav-arrow:disabled { opacity: 0.12; cursor: default; }
+
+    .img-wrapper {
+      flex: 1; height: 100%;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      cursor: default; user-select: none; position: relative;
+    }
+
+    #modal-img {
+      max-width: 100%; max-height: 100%;
+      object-fit: contain; display: block;
+      transform-origin: center center;
+      will-change: transform;
+    }
+
+    .zoom-chip {
+      position: absolute; bottom: 12px; right: 12px;
+      font-family: monospace; font-size: 0.72rem; color: var(--neon);
+      background: var(--neon-dim); border: 1px solid var(--neon-border);
+      padding: 3px 10px; border-radius: 100px;
+      pointer-events: none;
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .zoom-chip.visible { opacity: 1; }
+
+    @keyframes camFlash {
+      0%   { border-color: rgba(0,255,136,0.7); box-shadow: 0 0 20px rgba(0,255,136,0.22); }
+      100% { border-color: var(--border); box-shadow: none; }
+    }
+    .cam-card.cam-updated { animation: camFlash 1.4s ease-out forwards; }
+
+    /* ─── SETUP MODAL ────────────────────────────────── */
+    #setup-modal {
+      display: none; position: fixed; inset: 0; z-index: 700;
+      background: rgba(0,0,0,0.72);
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      align-items: center; justify-content: center;
+    }
+    #setup-modal.open { display: flex; }
+
+    .setup-card {
+      background: var(--card); border: 1px solid var(--neon-border);
+      border-radius: 18px; padding: 36px 30px;
+      max-width: 360px; width: 90%; text-align: center;
+      box-shadow: 0 0 60px rgba(0,255,136,0.07);
+      animation: fadeUp 0.3s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(18px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+
+    .setup-icon  { font-size: 38px; margin-bottom: 14px; }
+    .setup-title {
+      font-family: monospace; font-size: 1rem; font-weight: 700;
+      color: var(--neon); letter-spacing: 0.12em; margin-bottom: 12px;
+    }
+    .setup-desc  {
+      color: var(--text); font-size: 0.84rem; line-height: 1.65;
+      margin-bottom: 26px;
+    }
+    .btn-setup-yes {
+      display: block; width: 100%;
+      background: var(--neon); color: #000;
+      border: none; border-radius: 9px;
+      padding: 11px 20px; margin-bottom: 10px;
+      font-weight: 700; font-size: 0.84rem; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-setup-yes:hover { opacity: 0.84; }
+    .btn-setup-no {
+      display: block; width: 100%;
+      background: none; color: var(--text-dim);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 9px; padding: 10px 20px;
+      font-size: 0.82rem; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-setup-no:hover { color: var(--text); border-color: rgba(255,255,255,0.22); }
+  </style>
+</head>
+<body>
+
+<!-- ── SCAN OVERLAY ──────────────────────────────────── -->
+<div id="scan-overlay">
+  <div class="scan-icon">📷</div>
+  <div class="scan-title">VIGO CCTV</div>
+  <div class="scan-sub">ESCANEANDO RED · BUSCANDO CÁMARAS ACTIVAS</div>
+  <div class="scan-track">
+    <div class="scan-fill" id="scan-fill"></div>
+    <div class="scan-ping"></div>
+  </div>
+  <div class="scan-count">
+    Comprobando <em id="sc-curr">0</em> / 99 &nbsp;·&nbsp; Activas: <em id="sc-found">0</em>
+  </div>
+</div>
+
+<!-- ── HEADER ────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <div class="logo-box">📷</div>
+    VIGO&nbsp;<em>CCTV</em>
+  </div>
+  <div class="live-chip"><span class="dot"></span> EN DIRECTO</div>
+  <div class="spacer"></div>
+  <div class="timer-pill">↻ <span id="countdown">--</span>s</div>
+  <button class="btn-folder" id="btn-folder" onclick="pickFolder()" title="Seleccionar carpeta de descarga">📁</button>
+  <button class="btn-refresh" onclick="manualRefresh()">⟳ Actualizar</button>
+</header>
+
+<div id="toast"></div>
+
+<!-- ── MAIN ──────────────────────────────────────────── -->
+<main>
+  <div class="stats-bar">
+    <em id="stat-count">0</em> cámaras activas
+    <span>·</span> escaneadas: 01–99
+    <span>·</span> última sync: <em id="stat-time">--:--:--</em>
+  </div>
+  <div id="grid"></div>
+</main>
+
+<!-- ── SETUP MODAL ───────────────────────────────────── -->
+<div id="setup-modal">
+  <div class="setup-card">
+    <div class="setup-icon">💾</div>
+    <div class="setup-title">GUARDAR IMÁGENES</div>
+    <p class="setup-desc">
+      ¿Deseas guardar automáticamente las fotos de cada cámara cuando su imagen cambie?<br><br>
+      Se crearán subcarpetas <code style="color:var(--neon)">cam_XX/</code> con las capturas nombradas por fecha y hora.
+    </p>
+    <button class="btn-setup-yes" onclick="setupYes()">📁 Sí, seleccionar carpeta</button>
+    <button class="btn-setup-no"  onclick="setupNo()">Solo visualizar</button>
+  </div>
+</div>
+
+<!-- ── MODAL ─────────────────────────────────────────── -->
+<div id="modal">
+  <div class="modal-topbar">
+    <div class="modal-cam-label">CAM&nbsp;<em id="modal-id">--</em> &nbsp;·&nbsp; VIGO ES</div>
+    <div class="modal-spacer"></div>
+    <div class="timer-pill" style="font-size:.75rem">↻ <span id="modal-countdown">--</span>s</div>
+    <!-- Zoom -->
+    <button class="icon-btn" id="btn-zoom-out" onclick="zoom(-0.5)" title="Alejar (–)">&#8722;</button>
+    <button class="icon-btn" id="btn-zoom-in"  onclick="zoom(+0.5)" title="Acercar (+)">&#43;</button>
+    <button class="icon-btn" onclick="resetZoom()" title="Restablecer zoom" style="font-size:11px">1:1</button>
+    <!-- Close -->
+    <button class="icon-btn" onclick="closeModal()" title="Cerrar (Esc)" style="font-size:17px">&#10005;</button>
+  </div>
+
+  <div class="modal-body">
+    <button class="nav-arrow" id="btn-prev" onclick="navigate(-1)" title="Anterior (←)">&#8249;</button>
+    <div class="img-wrapper" id="img-wrapper">
+      <img id="modal-img" src="" alt="Cámara en directo">
+      <div class="zoom-chip" id="zoom-chip">100%</div>
+    </div>
+    <button class="nav-arrow" id="btn-next" onclick="navigate(+1)" title="Siguiente (→)">&#8250;</button>
+  </div>
+</div>
+
+<script>
+  // ── CONFIG ──────────────────────────────────────────
+  const CONCURRENCY  = 12;
+  const POLL_INTERVAL = 30;   // seconds between change-detection rounds
+  const POLL_CONCUR   = 8;    // parallel proxy requests during a poll
+
+  let activeIds  = [];
+  let currentIdx = -1;
+  let totalChecked = 0;
+  let pollCountdown = 8;      // seconds until first check after scan
+
+  // Per-camera state
+  const imageHashes = {};     // id -> SHA-256 hex of last seen bytes
+  const savedHashes = {};     // id -> SHA-256 hex of last saved bytes
+  const blobUrls    = {};     // id -> current object URL
+
+  // Zoom / pan state
+  let zoomLevel = 1, panX = 0, panY = 0;
+  let isPanning = false, startX = 0, startY = 0;
+  let touchDist = 0;
+  let zoomHideTimer = null;
+
+  // ── POLL COUNTDOWN ──────────────────────────────────
+  setInterval(() => {
+    pollCountdown--;
+    const disp = Math.max(0, pollCountdown);
+    document.getElementById('countdown').textContent = disp;
+    document.getElementById('modal-countdown').textContent = disp;
+    if (pollCountdown <= 0) {
+      pollCountdown = POLL_INTERVAL;
+      checkAllForChanges();
+    }
+  }, 1000);
+
+  // ── SCAN ────────────────────────────────────────────
+  async function scanCameras() {
+    const ids = Array.from({length: 99}, (_, i) => String(i + 1).padStart(2, '0'));
+    let idx = 0;
+
+    async function worker() {
+      while (idx < ids.length) {
+        const id = ids[idx++];
+        const ok = await checkCamera(id);
+        totalChecked++;
+        if (ok) activeIds.push(id);
+        document.getElementById('sc-curr').textContent  = totalChecked;
+        document.getElementById('sc-found').textContent = activeIds.length;
+        document.getElementById('scan-fill').style.width = (totalChecked / 99 * 100) + '%';
+      }
+    }
+
+    await Promise.all(Array.from({length: CONCURRENCY}, () => worker()));
+    activeIds.sort((a, b) => +a - +b);
+    hideScanOverlay();
+  }
+
+  function checkCamera(id) {
+    return new Promise(resolve => {
+      const img = new Image();
+      const t = setTimeout(() => { img.src = ''; resolve(false); }, 8000);
+      img.onload  = () => { clearTimeout(t); resolve(img.naturalWidth > 4); };
+      img.onerror = () => { clearTimeout(t); resolve(false); };
+      img.src = `http://camaras.vigo.org/webcam/camv2.php?id=${id}&t=${Date.now()}`;
+    });
+  }
+
+  function hideScanOverlay() {
+    const o = document.getElementById('scan-overlay');
+    o.style.opacity = '0';
+    setTimeout(() => { o.style.display = 'none'; buildGrid(); }, 500);
+  }
+
+  // ── GRID ────────────────────────────────────────────
+  function buildGrid() {
+    const ts = Date.now();
+    document.getElementById('grid').innerHTML = activeIds.map(id => `
+      <div class="cam-card" onclick="openModal('${id}')">
+        <div class="cam-thumb">
+          <img id="img${id}" src="http://camaras.vigo.org/webcam/camv2.php?id=${id}&t=${ts}" loading="lazy" alt="Cam ${id}">
+          <div class="live-badge"><span class="dot"></span> LIVE</div>
+        </div>
+        <div class="cam-footer">
+          <span class="cam-id">CAM · ${id}</span>
+          <span class="cam-loc">VIGO ES</span>
+        </div>
+      </div>`).join('');
+    updateStats();
+    setTimeout(showSetupModal, 350);
+  }
+
+  function manualRefresh() {
+    pollCountdown = POLL_INTERVAL;
+    checkAllForChanges();
+  }
+
+  function updateStats() {
+    document.getElementById('stat-count').textContent = activeIds.length;
+    document.getElementById('stat-time').textContent  = new Date().toLocaleTimeString('es-ES');
+  }
+
+  // ── MODAL ───────────────────────────────────────────
+  function openModal(id) {
+    currentIdx = activeIds.indexOf(id);
+    document.getElementById('modal').classList.add('open');
+    loadModalCamera(id);
+  }
+
+  function loadModalCamera(id) {
+    document.getElementById('modal-id').textContent = id;
+    document.getElementById('modal-img').src =
+      blobUrls[id] || `http://camaras.vigo.org/webcam/camv2.php?id=${id}&t=${Date.now()}`;
+    resetZoom();
+    updateNavBtns();
+  }
+
+  function closeModal() {
+    document.getElementById('modal').classList.remove('open');
+    currentIdx = -1;
+  }
+
+  function navigate(dir) {
+    const n = currentIdx + dir;
+    if (n >= 0 && n < activeIds.length) {
+      currentIdx = n;
+      loadModalCamera(activeIds[currentIdx]);
+    }
+  }
+
+  function updateNavBtns() {
+    document.getElementById('btn-prev').disabled = currentIdx <= 0;
+    document.getElementById('btn-next').disabled = currentIdx >= activeIds.length - 1;
+  }
+
+  // ── ZOOM ────────────────────────────────────────────
+  function zoom(delta) {
+    zoomLevel = Math.max(1, Math.min(6, zoomLevel + delta));
+    if (zoomLevel === 1) { panX = 0; panY = 0; }
+    applyTransform();
+  }
+
+  function resetZoom() { zoomLevel = 1; panX = 0; panY = 0; applyTransform(); }
+
+  function applyTransform() {
+    const img = document.getElementById('modal-img');
+    img.style.transform = `scale(${zoomLevel}) translate(${panX/zoomLevel}px, ${panY/zoomLevel}px)`;
+    const chip = document.getElementById('zoom-chip');
+    chip.textContent = Math.round(zoomLevel * 100) + '%';
+    chip.classList.toggle('visible', zoomLevel !== 1);
+    const w = document.getElementById('img-wrapper');
+    w.style.cursor = zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default';
+  }
+
+  // Mouse drag to pan
+  const wrapper = document.getElementById('img-wrapper');
+  wrapper.addEventListener('mousedown', e => {
+    if (zoomLevel > 1) { isPanning = true; startX = e.clientX - panX; startY = e.clientY - panY; e.preventDefault(); }
+  });
+  document.addEventListener('mousemove', e => {
+    if (isPanning) { panX = e.clientX - startX; panY = e.clientY - startY; applyTransform(); }
+  });
+  document.addEventListener('mouseup', () => { isPanning = false; });
+
+  // Scroll wheel zoom
+  wrapper.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoom(e.deltaY < 0 ? 0.3 : -0.3);
+  }, { passive: false });
+
+  // Touch pinch zoom
+  wrapper.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      touchDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+    }
+  }, { passive: true });
+
+  wrapper.addEventListener('touchmove', e => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      zoom((d - touchDist) / 200);
+      touchDist = d;
+    }
+  }, { passive: false });
+
+  // Close on backdrop click
+  document.getElementById('modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    const open = document.getElementById('modal').classList.contains('open');
+    if (!open) return;
+    if (e.key === 'Escape')       closeModal();
+    if (e.key === 'ArrowLeft')    navigate(-1);
+    if (e.key === 'ArrowRight')   navigate(+1);
+    if (e.key === '+' || e.key === '=') zoom(+0.5);
+    if (e.key === '-')            zoom(-0.5);
+    if (e.key === '0')            resetZoom();
+  });
+
+  // ── CHANGE DETECTION + DOWNLOAD ─────────────────────
+
+  // Hash helper
+  async function sha256hex(buffer) {
+    const h = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(h), b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  // Fetch one camera via proxy, compare hash, update img + optionally save
+  async function fetchAndUpdateCamera(id) {
+    try {
+      const resp = await fetch(`/proxy?id=${id}&t=${Date.now()}`);
+      if (!resp.ok) return;
+      const buf  = await resp.arrayBuffer();
+      const hash = await sha256hex(buf);
+      if (hash === imageHashes[id]) return;   // identical content — skip
+
+      // ── Content changed: update display ──────────────
+      imageHashes[id] = hash;
+      const prev = blobUrls[id];
+      blobUrls[id] = URL.createObjectURL(new Blob([buf], { type: 'image/jpeg' }));
+      if (prev) URL.revokeObjectURL(prev);
+
+      const imgEl = document.getElementById('img' + id);
+      if (imgEl) {
+        imgEl.src = blobUrls[id];
+        const card = imgEl.closest('.cam-card');
+        if (card) {
+          card.classList.remove('cam-updated');
+          void card.offsetWidth;          // restart animation
+          card.classList.add('cam-updated');
+        }
+      }
+      // Update modal if this camera is currently open
+      if (currentIdx >= 0 && activeIds[currentIdx] === id)
+        document.getElementById('modal-img').src = blobUrls[id];
+
+      // ── Save if folder set AND content is truly new ──
+      if (dirHandle && savedHashes[id] !== hash) {
+        savedHashes[id] = hash;
+        const filename = nowFilename();
+        try {
+          const sub = await dirHandle.getDirectoryHandle(`cam_${id}`, { create: true });
+          const fh  = await sub.getFileHandle(filename, { create: true });
+          const wr  = await fh.createWritable();
+          await wr.write(buf);
+          await wr.close();
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // Run all active cameras concurrently (limited)
+  async function checkAllForChanges() {
+    if (!activeIds.length) return;
+    let i = 0;
+    const worker = async () => { while (i < activeIds.length) await fetchAndUpdateCamera(activeIds[i++]); };
+    await Promise.all(Array.from({ length: Math.min(POLL_CONCUR, activeIds.length) }, worker));
+    updateStats();
+  }
+
+  // ── SETUP MODAL ──────────────────────────────────────
+  function showSetupModal() {
+    document.getElementById('setup-modal').classList.add('open');
+  }
+
+  async function setupYes() {
+    document.getElementById('setup-modal').classList.remove('open');
+    await pickFolder();
+  }
+
+  function setupNo() {
+    document.getElementById('setup-modal').classList.remove('open');
+  }
+
+  // ── FOLDER PICKER ────────────────────────────────────
+  let dirHandle = null;
+
+  async function pickFolder() {
+    if (!window.showDirectoryPicker) {
+      showToast('Tu navegador no soporta la API de acceso a carpetas', 3500);
+      return;
+    }
+    try {
+      dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      document.getElementById('btn-folder').classList.add('active');
+      showToast('✓ Carpeta configurada — las fotos se guardarán cuando cambien');
+    } catch (e) {
+      if (e.name !== 'AbortError') showToast('Error al seleccionar carpeta', 3000);
+    }
+  }
+
+  function nowFilename() {
+    const d = new Date(), p = n => String(n).padStart(2,'0');
+    return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()}-${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.jpg`;
+  }
+
+  // ── TOAST ───────────────────────────────────────────
+  let _toastTimer = null;
+  function showToast(msg, ms = 2800) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+  }
+
+  // ── START ────────────────────────────────────────────
+  scanCameras();
+</script>
+</body>
+</html>
